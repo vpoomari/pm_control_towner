@@ -1,0 +1,2370 @@
+// PM CONTROL TOWER — Enterprise Data Model (Single Source of Truth)
+// SQLite sandbox profile: enums modeled as String constants (see src/lib/constants.ts),
+// JSON payloads serialized to String columns. Production (Render PostgreSQL) uses the
+// same model with native enums/JSON — see documentation.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============ IDENTITY & ACCESS ============
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String
+  title         String?
+  department    String?
+  phone         String?
+  avatarColor   String    @default("#1e3a5f")
+  avatarUrl     String?
+  isActive      Boolean   @default(true)
+  mfaEnabled  Boolean @default(false)
+  mfaSecret   String?
+  externalId  String?
+  authSource  String   @default("LOCAL") // LOCAL | OIDC | SAML2
+  isSuperAdmin  Boolean   @default(false)
+  lastLoginAt   DateTime?
+  failedLogins  Int       @default(0)
+  lockedUntil   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  userRoles     UserRole[]
+  timesheetApprovals Timesheet[] @relation("TimesheetApprover")
+  inboxItems    InboxItem[]
+  notifications Notification[]
+  plannerEntries PlannerEntry[]
+  auditEvents   AuditEvent[]
+  ownedProjects Project[]  @relation("ProjectOwner")
+  assignedTasks Task[]     @relation("TaskAssignee")
+  aiExecutions  AIExecution[]
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  code        String   @unique
+  description String?
+  level       Int      @default(0)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  users       UserRole[]
+  permissions RolePermission[]
+}
+
+model Permission {
+  id          String @id @default(cuid())
+  code        String @unique
+  category    String
+  description String?
+
+  roles RolePermission[]
+}
+
+model UserRole {
+  userId     String
+  roleId     String
+  assignedAt DateTime @default(now())
+  user       User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+}
+
+// ============ PORTFOLIO HIERARCHY ============
+
+model Portfolio {
+  id                 String    @id @default(cuid())
+  code               String    @unique
+  name               String
+  description        String?
+  status             String    @default("ACTIVE")
+  ownerId            String?
+  strategicObjective String?
+  budgetTarget       Float     @default(0)
+  actualCost         Float     @default(0)
+  forecastCost       Float     @default(0)
+  currency           String    @default("USD")
+  startDate          DateTime?
+  endDate            DateTime?
+  healthScore        Float     @default(100)
+  ragStatus          String    @default("GREEN")
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  programs           Program[]
+  projects           Project[]
+}
+
+model Program {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  name         String
+  description  String?
+  portfolioId  String
+  ownerId      String?
+  status       String    @default("ACTIVE")
+  budget       Float     @default(0)
+  actualCost   Float     @default(0)
+  forecastCost Float     @default(0)
+  healthScore  Float     @default(100)
+  ragStatus    String    @default("GREEN")
+  startDate    DateTime?
+  endDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  projects  Project[]
+}
+
+model Project {
+  id               String    @id @default(cuid())
+  code             String    @unique
+  name             String
+  description      String?
+  portfolioId      String?
+  programId        String?
+  ownerId          String?
+  managerId        String?
+  sponsorId        String?
+  status           String    @default("DRAFT")
+  priority         String    @default("MEDIUM")
+  phase            String    @default("INITIATION")
+  methodology      String    @default("HYBRID")
+  riskLevel        String    @default("MEDIUM")
+  billingType      String    @default("NON_BILLABLE")
+  currency         String    @default("USD")
+  startDate        DateTime?
+  endDate          DateTime?
+  baselineStart    DateTime?
+  baselineFinish   DateTime?
+  baselineBudget   Float     @default(0)
+  currentBudget    Float     @default(0)
+  actualCost       Float     @default(0)
+  forecastCost     Float     @default(0)
+  plannedHours     Float     @default(0)
+  actualHours      Float     @default(0)
+  progress         Float     @default(0)
+  healthScore      Float     @default(100)
+  ragStatus        String    @default("GREEN")
+  charter          String?
+  objectives       String?
+  successCriteria  String?
+  statusDate       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  portfolio        Portfolio? @relation(fields: [portfolioId], references: [id], onDelete: SetNull)
+  program          Program?   @relation(fields: [programId], references: [id], onDelete: SetNull)
+  owner            User?      @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  wbsNodes         WBSNode[]
+  requirements     Requirement[]
+  tasks            Task[]
+  dependencies     Dependency[]
+  milestones       Milestone[]
+  baselines        Baseline[]
+  calendar         ProjectCalendar?
+  assignments      Assignment[]
+  timesheetEntries TimesheetEntry[]
+  budgetLines      BudgetLine[]
+  evmPeriods       EvmPeriod[]
+  risks            Risk[]
+  issues           Issue[]
+  assumptions      Assumption[]
+  changeRequests   ChangeRequest[]
+  stageGates       StageGate[]
+  healthSnapshots  ProjectHealthSnapshot[]
+  forecasts        ProjectForecast[]
+  deliverables     Deliverable[]
+  qualityRecords   QualityRecord[]
+  alertEvents      AlertEvent[]
+  inboxItems       InboxItem[]
+  plannerEntries   PlannerEntry[]
+  freshnessMetrics FreshnessMetric[]
+  evidenceBundles  EvidenceBundle[]
+  simulationRuns   SimulationRun[]
+  scenarios        Scenario[]
+  aiActions        AiAction[]
+  benefitProfiles  BenefitProfile[]
+  customFieldsJson String?
+  // Dynamic Field Configuration Engine — admin-defined field values keyed by fieldKey
+  customData       Json? // keyed by fieldKey; app uses `?? {}` (SQLite rejects Json defaults)
+  strategicObjectiveId String?
+  strategicObjective StrategicObjective? @relation(fields: [strategicObjectiveId], references: [id], onDelete: SetNull)
+  projectScore     ProjectScore?
+  uatCycles        UatCycle[]
+  scheduleScenarios ScheduleScenario[]
+  // Command Center expansion (v3.0)
+  clientId         String?
+  client           Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  epics            Epic[]
+  sprints          Sprint[]
+  rfis             Rfi[]
+  dailyLogs        DailyLog[]
+  punchListItems   PunchListItem[]
+  invoices         Invoice[]
+  expenses         Expense[]
+  feedbackPosts    FeedbackPost[]
+  roadmapItems     RoadmapItem[]
+  boardThreads     BoardThread[]
+}
+
+// ============ COMMAND CENTER EXPANSION (v3.0) ============
+
+// --- Agile delivery: epics, sprints, story points on Task ---
+model Epic {
+  id            String   @id @default(cuid())
+  projectId     String
+  code          String
+  name          String
+  colorHex      String   @default("#2563eb")
+  status        String   @default("OPEN") // OPEN | IN_PROGRESS | DONE
+  businessValue String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId])
+}
+
+model Sprint {
+  id              String    @id @default(cuid())
+  projectId       String
+  name            String
+  goal            String?
+  status          String    @default("PLANNED") // PLANNED | ACTIVE | COMPLETED
+  startDate       DateTime?
+  endDate         DateTime?
+  committedPoints Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+
+  @@index([projectId, status])
+}
+
+// ============ PLANNING: SCOPE → WBS → TASKS ============
+
+model WBSNode {
+  id           String   @id @default(cuid())
+  projectId    String
+  parentId     String?
+  code         String
+  name         String
+  description  String?
+  nodeType     String   @default("WORK_PACKAGE")
+  level        Int      @default(1)
+  orderIndex   Int      @default(0)
+  ownerName    String?
+  plannedHours Float    @default(0)
+  plannedCost  Float    @default(0)
+  actualHours  Float    @default(0)
+  actualCost   Float    @default(0)
+  progress     Float    @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parent      WBSNode?   @relation("WBSTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    WBSNode[]  @relation("WBSTree")
+  tasks       Task[]
+  requirements Requirement[]
+
+  @@index([projectId])
+  @@index([parentId])
+}
+
+model Requirement {
+  id                 String   @id @default(cuid())
+  projectId          String
+  wbsId              String?
+  reqCode            String
+  title              String
+  description        String?
+  reqType            String   @default("FUNCTIONAL")
+  priority           String   @default("MEDIUM")
+  status             String   @default("DRAFT")
+  acceptanceCriteria String?
+  source             String?
+  ownerName          String?
+  effortEstimate     Float    @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wbs     WBSNode? @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+}
+
+model Task {
+  id             String    @id @default(cuid())
+  projectId      String
+  wbsId          String?
+  parentId       String?
+  code           String
+  name           String
+  description    String?
+  status         String    @default("NOT_STARTED")
+  priority       String    @default("MEDIUM")
+  criticality    String    @default("MEDIUM")
+  startDate      DateTime?
+  endDate        DateTime?
+  durationDays   Float     @default(1)
+  progress       Float     @default(0)
+  plannedHours   Float     @default(0)
+  actualHours    Float     @default(0)
+  remainingHours Float     @default(0)
+  plannedCost    Float     @default(0)
+  actualCost     Float     @default(0)
+  assigneeId     String?
+  isCritical     Boolean   @default(false)
+  isSummary      Boolean   @default(false)
+  earliestStart  DateTime?
+  earliestFinish DateTime?
+  latestStart    DateTime?
+  latestFinish   DateTime?
+  totalFloat     Float     @default(0)
+  freeFloat      Float     @default(0)
+  constraintType String    @default("ASAP")
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wbs         WBSNode? @relation(fields: [wbsId], references: [id], onDelete: SetNull)
+  parent      Task?    @relation("TaskTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children    Task[]   @relation("TaskTree")
+  assignee    User?    @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  estimate     TaskEstimate?
+  predecessors Dependency[] @relation("DependencySuccessor")
+  successors  Dependency[] @relation("DependencyPredecessor")
+  entries     TimesheetEntry[]
+  plannerEntries PlannerEntry[]
+  assignments Assignment[]
+  // Agile (Command Center v3.0)
+  epic        Epic?    @relation(fields: [epicId], references: [id], onDelete: SetNull)
+  sprint      Sprint?  @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  epicId      String?
+  sprintId    String?
+  storyPoints Float    @default(0)
+  backlogOrder Int     @default(0)
+  constraintDate DateTime?
+  deadline      DateTime?
+
+  @@index([projectId])
+  @@index([wbsId])
+  @@index([assigneeId])
+}
+
+model Dependency {
+  id             String @id @default(cuid())
+  projectId      String
+  predecessorId  String
+  successorId    String
+  depType        String @default("FS")
+  lagDays        Float  @default(0)
+  isExternal     Boolean @default(false)
+  externalRef    String?
+  createdAt      DateTime @default(now())
+
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  predecessor Task    @relation("DependencyPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   Task    @relation("DependencySuccessor", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([predecessorId])
+  @@index([successorId])
+}
+
+model Milestone {
+  id           String    @id @default(cuid())
+  projectId    String
+  wbsId        String?
+  code         String
+  name         String
+  description  String?
+  dueDate      DateTime?
+  baselineDate DateTime?
+  status       String    @default("PENDING")
+  isCritical   Boolean   @default(false)
+  gateId       String?
+  completedAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  project Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Baseline {
+  id             String    @id @default(cuid())
+  projectId      String
+  version        Int       @default(1)
+  name           String
+  description    String?
+  status         String    @default("DRAFT")
+  baselineStart  DateTime?
+  baselineFinish DateTime?
+  baselineHours  Float     @default(0)
+  baselineCost   Float     @default(0)
+  snapshotJson   String?
+  createdBy      String?
+  activatedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+// PM CONTROL TOWER — Working-time calendar per project (controls scheduling math).
+// workingDays: JSON array of ISO day numbers Mon=1..Sun=7 that count as working days.
+// hoursPerDay: contracted working hours in an ordinary working day.
+// holidays:    JSON array of ISO dates ("2026-12-25") that are non-working exceptions.
+model ProjectCalendar {
+  id           String  @id @default(cuid())
+  projectId    String  @unique
+  workingDays  String  @default("[1,2,3,4,5]")
+  hoursPerDay  Float   @default(8)
+  holidays     String  @default("[]")
+  calendarName String  @default("Standard")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+}
+
+// ============ EXECUTE: RESOURCES, TIMESHEETS ============
+
+model Resource {
+  id                   String    @id @default(cuid())
+  userId               String?
+  employeeCode         String    @unique
+  name                 String
+  email                String
+  title                String?
+  department           String?
+  resourceType         String    @default("EMPLOYEE")
+  seniority            String    @default("MID")
+  primarySkill         String?
+  skills               String?
+  capacityHoursPerWeek Float     @default(40)
+  costRate             Float     @default(0)
+  billableRate         Float     @default(0)
+  currency             String    @default("USD")
+  availabilityStatus   String    @default("AVAILABLE")
+  location             String?
+  managerName          String?
+  isActive             Boolean   @default(true)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  assignments Assignment[]
+  timesheets  Timesheet[] @relation("TimesheetOwner")
+}
+
+model Assignment {
+  id                String    @id @default(cuid())
+  projectId         String
+  resourceId        String
+  taskId            String?
+  role              String?
+  allocationPercent Float     @default(100)
+  plannedHours      Float     @default(0)
+  actualHours       Float     @default(0)
+  startDate         DateTime?
+  endDate           DateTime?
+  status            String    @default("ACTIVE")
+  billable          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+
+  project  Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  task     Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([resourceId])
+}
+
+model Timesheet {
+  id              String    @id @default(cuid())
+  resourceId      String
+  userId          String?
+  weekStart       DateTime
+  weekEnd         DateTime
+  status          String    @default("DRAFT")
+  totalHours      Float     @default(0)
+  regularHours    Float     @default(0)
+  overtimeHours   Float     @default(0)
+  billableHours   Float     @default(0)
+  nonBillableHours Float    @default(0)
+  leaveHours      Float     @default(0)
+  holidayHours    Float     @default(0)
+  comments        String?
+  approverId      String?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  approvedAt      DateTime?
+  rejectionReason String?
+  lockedAt        DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  resource Resource @relation("TimesheetOwner", fields: [resourceId], references: [id], onDelete: Cascade)
+  approver User?    @relation("TimesheetApprover", fields: [approverId], references: [id], onDelete: SetNull)
+  entries  TimesheetEntry[]
+
+  @@unique([resourceId, weekStart])
+  @@index([status])
+}
+
+model TimesheetEntry {
+  id              String   @id @default(cuid())
+  timesheetId     String
+  entryDate       DateTime
+  projectId       String?
+  programId       String?
+  workstream      String?
+  wbsId           String?
+  taskId          String?
+  activity        String?
+  startTime       String?
+  endTime         String?
+  breakMinutes    Float    @default(0)
+  hours           Float    @default(0)
+  regularHours    Float    @default(0)
+  overtimeHours   Float    @default(0)
+  billableHours   Float    @default(0)
+  nonBillableHours Float   @default(0)
+  entryType       String   @default("WORK")
+  billable        Boolean  @default(true)
+  comments        String?
+  createdAt       DateTime @default(now())
+
+  timesheet Timesheet @relation(fields: [timesheetId], references: [id], onDelete: Cascade)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([timesheetId])
+  @@index([projectId])
+  @@index([taskId])
+}
+
+model Approval {
+  id          String    @id @default(cuid())
+  entityType  String
+  entityId    String
+  projectId   String?
+  approvalType String   @default("TIMESHEET")
+  requesterId String?
+  approverId  String?
+  status      String    @default("PENDING")
+  decision    String?
+  decisionDate DateTime?
+  comments    String?
+  level       Int       @default(1)
+  createdAt   DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([status])
+}
+
+// ============ CONTROL: FINANCIALS, EVM, HEALTH ============
+
+model BudgetLine {
+  id             String   @id @default(cuid())
+  projectId      String
+  category       String   @default("LABOR")
+  name           String
+  baselineAmount Float    @default(0)
+  currentAmount  Float    @default(0)
+  actualAmount   Float    @default(0)
+  forecastAmount Float    @default(0)
+  period         String?
+  vendorId       String?
+  notes          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model EvmPeriod {
+  id               String   @id @default(cuid())
+  projectId        String
+  statusDate       DateTime
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  bac              Float    @default(0)
+  pv               Float    @default(0)
+  ev               Float    @default(0)
+  ac               Float    @default(0)
+  cpi              Float    @default(1)
+  spi              Float    @default(1)
+  eac              Float    @default(0)
+  etc              Float    @default(0)
+  vac              Float    @default(0)
+  tcpi             Float    @default(1)
+  costVariance     Float    @default(0)
+  scheduleVariance Float    @default(0)
+  percentComplete  Float    @default(0)
+  source           String   @default("CALCULATED")
+  createdAt        DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, statusDate])
+}
+
+model ProjectHealthSnapshot {
+  id                  String   @id @default(cuid())
+  projectId           String
+  capturedAt          DateTime @default(now())
+  healthScore         Float    @default(100)
+  ragStatus           String   @default("GREEN")
+  cpi                 Float    @default(1)
+  spi                 Float    @default(1)
+  costVariance        Float    @default(0)
+  scheduleVariance    Float    @default(0)
+  eac                 Float    @default(0)
+  bac                 Float    @default(0)
+  openRisks           Int      @default(0)
+  openIssues          Int      @default(0)
+  overdueMilestones   Int      @default(0)
+  resourceUtilization Float    @default(0)
+  triggeredBy         String   @default("SYSTEM")
+  notes               String?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, capturedAt])
+}
+
+model ProjectForecast {
+  id                 String   @id @default(cuid())
+  projectId          String
+  period             String
+  forecastCost       Float    @default(0)
+  forecastHours      Float    @default(0)
+  forecastFinishDate DateTime?
+  confidence         String   @default("MEDIUM")
+  basis              String   @default("EVM")
+  createdAt          DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, period])
+}
+
+// ============ CONTROL: RAID ============
+
+model Risk {
+  id                 String    @id @default(cuid())
+  projectId          String
+  code               String
+  title              String
+  description        String?
+  category           String    @default("TECHNICAL")
+  probability        Int       @default(3)
+  impact             Int       @default(3)
+  score              Int       @default(9)
+  severity           String    @default("MEDIUM")
+  status             String    @default("OPEN")
+  ownerName          String?
+  responseStrategy   String    @default("MITIGATE")
+  mitigation         String?
+  contingency        String?
+  residualProbability Int      @default(3)
+  residualImpact     Int       @default(3)
+  escalationLevel    String    @default("NONE")
+  identifiedAt       DateTime  @default(now())
+  dueDate            DateTime?
+  closedAt           DateTime?
+  updatedAt          DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Issue {
+  id              String    @id @default(cuid())
+  projectId       String
+  code            String
+  title           String
+  description     String?
+  category        String    @default("TECHNICAL")
+  priority        String    @default("MEDIUM")
+  severity        String    @default("MEDIUM")
+  status          String    @default("OPEN")
+  ownerName       String?
+  raisedBy        String?
+  impact          String?
+  resolution      String?
+  escalationLevel String    @default("NONE")
+  raisedAt        DateTime  @default(now())
+  dueDate         DateTime?
+  resolvedAt      DateTime?
+  updatedAt       DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Assumption {
+  id            String    @id @default(cuid())
+  projectId     String
+  code          String
+  description   String
+  rationale     String?
+  impactIfFalse String?
+  status        String    @default("VALID")
+  ownerName     String?
+  validationDate DateTime?
+  dueDate       DateTime?
+  createdAt     DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+// ============ CONTROL: CHANGE, GATES, GOVERNANCE ============
+
+model ChangeRequest {
+  id                String    @id @default(cuid())
+  projectId         String
+  code              String
+  title             String
+  description       String?
+  reason            String?
+  category          String    @default("SCOPE")
+  requesterId       String?
+  requesterName     String?
+  ownerId           String?
+  impactHours       Float     @default(0)
+  impactCost        Float     @default(0)
+  scheduleImpactDays Float    @default(0)
+  riskImpact        String    @default("LOW")
+  status            String    @default("DRAFT")
+  decision          String?
+  decisionDate      DateTime?
+  decidedBy         String?
+  dueDate           DateTime?
+  priority          String    @default("MEDIUM")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model StageGate {
+  id             String    @id @default(cuid())
+  projectId      String
+  code           String
+  sequence       Int       @default(1)
+  name           String
+  description    String?
+  criteria       String?
+  plannedDate    DateTime?
+  decisionStatus String    @default("PENDING")
+  decisionDate   DateTime?
+  approverId     String?
+  approverName   String?
+  evidence       String?
+  comments       String?
+  createdAt      DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model GovernanceRule {
+  id                 String    @id @default(cuid())
+  name               String
+  description        String?
+  metric             String
+  operator           String    @default("LT")
+  threshold          Float     @default(0)
+  severity           String    @default("WARNING")
+  scopeType          String    @default("GLOBAL")
+  scopeId            String?
+  isActive           Boolean   @default(true)
+  actionNotify       Boolean   @default(true)
+  actionInbox        Boolean   @default(true)
+  actionRecalcHealth Boolean   @default(true)
+  executionCount     Int       @default(0)
+  lastTriggeredAt    DateTime?
+  createdBy          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+model AlertEvent {
+  id           String    @id @default(cuid())
+  projectId    String?
+  ruleId       String?
+  alertType    String    @default("GOVERNANCE")
+  severity     String    @default("WARNING")
+  title        String
+  message      String?
+  metricValue  Float?
+  threshold    Float?
+  status       String    @default("NEW")
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  resolvedAt   DateTime?
+  source       String    @default("GOVERNANCE_ENGINE")
+  createdAt    DateTime  @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([projectId])
+}
+
+// ============ DELIVERY: DELIVERABLES, QUALITY, COLLABORATION ============
+
+model Deliverable {
+  id                 String    @id @default(cuid())
+  projectId          String
+  wbsId              String?
+  code               String
+  name               String
+  description        String?
+  deliverableType    String    @default("DOCUMENT")
+  status             String    @default("NOT_STARTED")
+  ownerName          String?
+  dueDate            DateTime?
+  deliveredAt        DateTime?
+  acceptanceCriteria String?
+  qualityStatus      String    @default("PENDING")
+  createdAt          DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  proofRounds ProofRound[]
+
+  @@index([projectId])
+}
+
+// ============ COMMAND CENTER: COMMERCIAL (CLIENTS, INVOICES, EXPENSES) ============
+
+model Client {
+  id           String  @id @default(cuid())
+  name         String
+  organization String?
+  contactName  String?
+  email        String?
+  phone        String?
+  portalUrl    String?
+  status       String  @default("ACTIVE") // PROSPECT | ACTIVE | ON_HOLD | CHURNED
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  projects Project[]
+  invoices Invoice[]
+
+  @@index([status])
+}
+
+model Invoice {
+  id        String    @id @default(cuid())
+  clientId  String
+  projectId String?
+  number    String    @unique
+  status    String    @default("DRAFT") // DRAFT | SENT | PAID | OVERDUE | VOID
+  currency  String    @default("USD")
+  issueDate DateTime?
+  dueDate   DateTime?
+  paidAt    DateTime?
+  taxPct    Float     @default(0)
+  subtotal  Float     @default(0)
+  taxAmount Float     @default(0)
+  total     Float     @default(0)
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  client  Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  project Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lines   InvoiceLine[]
+
+  @@index([clientId])
+  @@index([status])
+}
+
+model InvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  total       Float   @default(0)
+  taskId      String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
+}
+
+model Expense {
+  id              String   @id @default(cuid())
+  projectId       String
+  category        String   @default("OTHER") // LABOR | MATERIALS | EQUIPMENT | TRAVEL | SOFTWARE | SERVICES | OTHER
+  description     String
+  amount          Float    @default(0)
+  currency        String   @default("USD")
+  expenseDate     DateTime @default(now())
+  billable        Boolean  @default(true)
+  vendorName      String?
+  receiptUrl      String?
+  status          String   @default("PENDING") // PENDING | APPROVED | REJECTED | REIMBURSED
+  approvedByName  String?
+  createdAt       DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([expenseDate])
+}
+
+// ============ COMMAND CENTER: FIELD OPERATIONS (CONSTRUCTION) ============
+
+model Rfi {
+  id                 String    @id @default(cuid())
+  projectId          String
+  rfiCode            String
+  subject            String
+  body               String?
+  discipline         String    @default("GENERAL") // GENERAL | STRUCTURAL | MEP | ARCHITECTURAL | CIVIL | ELECTRICAL | SOFTWARE
+  status             String    @default("OPEN") // DRAFT | OPEN | ANSWERED | CLOSED
+  priority           String    @default("MEDIUM")
+  askedByName        String?
+  assignedToName     String?
+  dateOpened         DateTime  @default(now())
+  dateAnswered       DateTime?
+  answer             String?
+  costImpact         Float     @default(0)
+  scheduleImpactDays Float     @default(0)
+  attachmentUrl      String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, rfiCode])
+  @@index([projectId, status])
+}
+
+model DailyLog {
+  id               String   @id @default(cuid())
+  projectId        String
+  logDate          DateTime
+  weather          String?
+  temperatureC     Float?
+  crewCount        Int      @default(0)
+  equipmentUsed    String?
+  workPerformed    String?
+  delays           String?
+  safetyIncidents  Int      @default(0)
+  inspections      String?
+  notes            String?
+  createdByName    String?
+  createdAt        DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, logDate])
+}
+
+model PunchListItem {
+  id            String    @id @default(cuid())
+  projectId     String
+  code          String
+  title         String
+  description   String?
+  location      String?
+  severity      String    @default("MEDIUM") // LOW | MEDIUM | HIGH
+  status        String    @default("OPEN") // OPEN | IN_PROGRESS | CLOSED | VERIFIED
+  assigneeName  String?
+  dueDate       DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, code])
+  @@index([projectId, status])
+}
+
+// ============ COMMAND CENTER: PRODUCT STRATEGY (FEEDBACK, ROADMAP) ============
+
+model FeedbackPost {
+  id              String   @id @default(cuid())
+  title           String
+  body            String?
+  category        String   @default("FEATURE") // BUG | FEATURE | IDEA | INTEGRATION | UX
+  source          String   @default("INTERNAL") // INTERNAL | CLIENT | PORTAL
+  status          String   @default("NEW") // NEW | UNDER_REVIEW | PLANNED | IN_PROGRESS | SHIPPED | DECLINED
+  projectId       String?
+  submittedByName String?
+  submittedByEmail String?
+  votesCount      Int      @default(0)
+  roadmapItemId   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  roadmapItem RoadmapItem? @relation(fields: [roadmapItemId], references: [id], onDelete: SetNull)
+  votes       FeedbackVote[]
+
+  @@index([status])
+  @@index([votesCount])
+}
+
+model FeedbackVote {
+  id       String   @id @default(cuid())
+  postId   String
+  voterKey String
+  createdAt DateTime @default(now())
+
+  post FeedbackPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, voterKey])
+}
+
+model RoadmapItem {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  quarter      String   @default("2026-Q4") // e.g. 2026-Q4
+  status       String   @default("PLANNED") // PLANNED | COMMITTED | IN_PROGRESS | SHIPPED | DEFERRED
+  progress     Float    @default(0)
+  releaseTag   String?
+  projectId    String?
+  objectiveId  String?
+  orderIndex   Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  project        Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  linkedFeedback FeedbackPost[]
+
+  @@index([quarter])
+  @@index([status])
+}
+
+// ============ COMMAND CENTER: KNOWLEDGE (DOCS) & COMMUNICATION (BOARDS) ============
+
+model DocPage {
+  id        String   @id @default(cuid())
+  title     String
+  icon      String   @default("📄")
+  content   String   @default("") // Markdown body; supports embedded tables
+  space     String   @default("GENERAL") // GENERAL | ENGINEERING | CONSTRUCTION | FINANCE | PRODUCT | GOVERNANCE
+  tags      String?
+  parentId  String?
+  projectId String?
+  authorId  String?
+  authorName String?
+  isPublished Boolean @default(true)
+  orderIndex Int     @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([space])
+  @@index([updatedAt])
+}
+
+model BoardThread {
+  id             String   @id @default(cuid())
+  projectId      String?
+  title          String
+  category       String   @default("GENERAL") // GENERAL | ANNOUNCEMENTS | STANDUP | Q_AND_A | RISKS | WINS
+  createdById    String?
+  createdByName  String?
+  pinned         Boolean  @default(false)
+  replyCount     Int      @default(0)
+  lastActivityAt DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([lastActivityAt])
+}
+
+// ============ COMMAND CENTER: PROOFING & APPROVALS ============
+
+model ProofRound {
+  id            String    @id @default(cuid())
+  deliverableId String
+  roundNumber   Int       @default(1)
+  versionLabel  String    @default("v1")
+  fileUrl       String?
+  status        String    @default("PENDING") // PENDING | IN_REVIEW | CHANGES_REQUESTED | APPROVED
+  dueDate       DateTime?
+  reviewerName  String?
+  decisionAt    DateTime?
+  notes         String?
+  createdAt     DateTime  @default(now())
+
+  deliverable Deliverable      @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  annotations ProofAnnotation[]
+
+  @@index([deliverableId])
+}
+
+model ProofAnnotation {
+  id         String   @id @default(cuid())
+  roundId    String
+  locator    String   @default("") // page number or timecode
+  xPct       Float?
+  yPct       Float?
+  comment    String
+  authorName String?
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  round ProofRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId])
+}
+
+model QualityRecord {
+  id           String   @id @default(cuid())
+  projectId    String
+  deliverableId String?
+  recordType   String   @default("REVIEW")
+  title        String
+  description  String?
+  result       String   @default("PASS")
+  score        Float?
+  reviewerName String?
+  findings     String?
+  actions      String?
+  reviewedAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model Meeting {
+  id           String    @id @default(cuid())
+  projectId    String?
+  title        String
+  meetingType  String    @default("STEERCO")
+  scheduledAt  DateTime
+  durationMins Int       @default(60)
+  location     String?
+  organizerId  String?
+  attendees    String?
+  agenda       String?
+  minutes      String?
+  status       String    @default("SCHEDULED")
+  createdAt    DateTime  @default(now())
+
+  plannerEntries PlannerEntry[]
+
+  @@index([scheduledAt])
+}
+
+model Decision {
+  id          String   @id @default(cuid())
+  projectId   String?
+  meetingId   String?
+  code        String
+  title       String
+  description String?
+  decision    String?
+  decidedBy   String?
+  decisionDate DateTime @default(now())
+  impact      String?
+  status      String   @default("ACTIVE")
+  // Leadership Decision Register extensions (nullable — legacy rows remain valid)
+  decisionOwner String?
+  raisedAt     DateTime?
+  requiredBy   DateTime?
+  businessImpact String?
+  projectImpact  String?
+  recommendedDecision String?
+  priority    String   @default("MEDIUM")
+  escalatedAt DateTime?
+
+  @@index([projectId])
+  @@index([status, requiredBy])
+}
+
+model Stakeholder {
+  id           String  @id @default(cuid())
+  projectId    String?
+  portfolioId  String?
+  name         String
+  role         String?
+  organization String?
+  influence    String  @default("MEDIUM")
+  interest     String  @default("MEDIUM")
+  engagement   String  @default("NEUTRAL")
+  email        String?
+  phone        String?
+  strategy     String?
+  notes        String?
+  createdAt    DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model Communication {
+  id        String   @id @default(cuid())
+  projectId String?
+  commType  String   @default("EMAIL")
+  subject   String
+  audience  String?
+  channel   String   @default("IN_APP")
+  content   String?
+  senderId  String?
+  sentAt    DateTime @default(now())
+  status    String   @default("SENT")
+
+  @@index([projectId])
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  projectId   String?
+  name        String
+  docType     String?
+  category    String?
+  url         String?
+  version     String   @default("1.0")
+  sizeKb      Float    @default(0)
+  description String?
+  uploadedBy  String?
+  uploadedAt  DateTime @default(now())
+
+  @@index([projectId])
+}
+
+model Vendor {
+  id            String  @id @default(cuid())
+  name          String  @unique
+  vendorType    String?
+  contactName   String?
+  email         String?
+  phone         String?
+  contractRef   String?
+  contractValue Float   @default(0)
+  rating        Float   @default(0)
+  status        String  @default("ACTIVE")
+  notes         String?
+}
+
+// ============ ENGAGEMENT: NOTIFICATIONS, INBOX, PLANNER ============
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  notifType  String    @default("SYSTEM")
+  category   String    @default("SYSTEM")
+  title      String
+  message    String?
+  entityType String?
+  entityId   String?
+  projectId  String?
+  channel    String    @default("IN_APP")
+  severity   String    @default("INFO")
+  actionUrl  String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model InboxItem {
+  id          String    @id @default(cuid())
+  userId      String
+  category    String    @default("ACTION_REQUIRED")
+  title       String
+  message     String?
+  entityType  String?
+  entityId    String?
+  projectId   String?
+  priority    String    @default("MEDIUM")
+  dueDate     DateTime?
+  status      String    @default("OPEN")
+  actionUrl   String?
+  sourceType  String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+}
+
+model PlannerEntry {
+  id             String    @id @default(cuid())
+  userId         String
+  taskId         String?
+  projectId      String?
+  meetingId      String?
+  title          String
+  entryType      String    @default("FOCUS")
+  date           DateTime
+  startTime      String?
+  endTime        String?
+  durationMins   Int       @default(60)
+  priority       String    @default("MEDIUM")
+  status         String    @default("PLANNED")
+  estimatedHours Float     @default(1)
+  notes          String?
+  createdAt      DateTime  @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task    Task?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  meeting Meeting? @relation(fields: [meetingId], references: [id], onDelete: SetNull)
+
+  @@index([userId, date])
+}
+
+// ============ AUTOMATION ============
+
+model AutomationRule {
+  id             String    @id @default(cuid())
+  name           String
+  description    String?
+  triggerType    String
+  conditionsJson String?
+  actionsJson    String?
+  isActive       Boolean   @default(true)
+  priority       Int       @default(5)
+  executionCount Int       @default(0)
+  failureCount   Int       @default(0)
+  lastRunAt      DateTime?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  executions AutomationExecution[]
+}
+
+model AutomationExecution {
+  id          String   @id @default(cuid())
+  ruleId      String
+  projectId   String?
+  status      String   @default("SUCCESS")
+  triggeredBy String   @default("SYSTEM")
+  entityType  String?
+  entityId    String?
+  inputJson   String?
+  outputJson  String?
+  error       String?
+  durationMs  Int      @default(0)
+  attempts    Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  rule AutomationRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([ruleId, createdAt])
+}
+
+// ============ TEMPLATES ============
+
+model Template {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   @default("PROJECT")
+  templateType String?
+  description String?
+  methodology String?
+  industry    String?
+  version     String   @default("1.0")
+  isActive    Boolean  @default(true)
+  usageCount  Int      @default(0)
+  rating      Float    @default(0)
+  tags        String?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  versions TemplateVersion[]
+}
+
+model TemplateVersion {
+  id            String   @id @default(cuid())
+  templateId    String
+  version       String
+  changelog     String?
+  structureJson String?
+  status        String   @default("ACTIVE")
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  template Template @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
+}
+
+// ============ INTEGRATION HUB ============
+
+model Integration {
+  id              String    @id @default(cuid())
+  name            String
+  category        String
+  provider        String?
+  description     String?
+  status          String    @default("DISCONNECTED")
+  authType        String    @default("API_KEY")
+  authStatus      String    @default("NOT_CONFIGURED")
+  syncDirection   String    @default("OUTBOUND")
+  syncFrequency   String    @default("HOURLY")
+  lastSyncAt      DateTime?
+  errorCount      Int       @default(0)
+  retryCount      Int       @default(0)
+  lastError       String?
+  healthScore     Float     @default(100)
+  configJson      String?
+  createdBy       String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  credentials IntegrationCredential[]
+  events      IntegrationEvent[]
+
+  @@index([category])
+}
+
+model IntegrationCredential {
+  id            String    @id @default(cuid())
+  integrationId String
+  label         String
+  credType      String    @default("API_KEY")
+  maskedValue   String
+  encryptedRef  String?
+  expiresAt     DateTime?
+  rotatedAt     DateTime?
+  status        String    @default("ACTIVE")
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+}
+
+model IntegrationEvent {
+  id            String   @id @default(cuid())
+  integrationId String
+  direction     String   @default("OUTBOUND")
+  eventType     String
+  status        String   @default("SUCCESS")
+  payload       String?
+  response      String?
+  error         String?
+  durationMs    Int      @default(0)
+  attempts      Int      @default(1)
+  createdAt     DateTime @default(now())
+
+  integration Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+
+  @@index([integrationId, createdAt])
+}
+
+model WebhookSubscription {
+  id             String    @id @default(cuid())
+  name           String
+  url            String
+  events         String
+  secretRef      String?
+  status         String    @default("ACTIVE")
+  authType       String    @default("HMAC_SHA256")
+  maxRetries     Int       @default(3)
+  deliveryCount  Int       @default(0)
+  failureCount   Int       @default(0)
+  lastDeliveryAt DateTime?
+  lastStatus     String?
+  createdBy      String?
+  createdAt      DateTime  @default(now())
+
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  subscriptionId String
+  eventType      String
+  payload        String?
+  responseCode   Int?
+  responseBody   String?
+  status         String   @default("SUCCESS")
+  attempts       Int      @default(1)
+  durationMs     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  subscription WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, createdAt])
+}
+
+// ============ AI CONNECTOR GATEWAY ============
+
+model AIConnector {
+  id          String    @id @default(cuid())
+  name        String
+  provider    String    @default("INTERNAL")
+  model       String?
+  purpose     String?
+  status      String    @default("ACTIVE")
+  dataScope   String?
+  temperature Float     @default(0.3)
+  maxTokens   Int       @default(2048)
+  configJson  String?
+  usageCount  Int       @default(0)
+  lastUsedAt  DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model AIExecution {
+  id            String   @id @default(cuid())
+  connectorId   String?
+  userId        String?
+  prompt        String
+  response      String?
+  tokens        Int      @default(0)
+  durationMs    Int      @default(0)
+  status        String   @default("SUCCESS")
+  dataScopeUsed String?
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+}
+
+// ============ AUDIT ============
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  userId     String?
+  userName   String?
+  role       String?
+  action     String
+  entityType String
+  entityId   String?
+  entityName String?
+  beforeJson String?
+  afterJson  String?
+  ipAddress  String?
+  userAgent  String?
+  context    String?
+  severity   String   @default("INFO")
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============ LEADERSHIP REPORTING & EXECUTIVE CONTROL TOWER ============
+
+model ActionItem {
+  id             String    @id @default(cuid())
+  projectId      String?
+  code           String    @unique
+  title          String
+  description    String?
+  ownerName      String?
+  ownerEmail     String?
+  priority       String    @default("MEDIUM")
+  status         String    @default("OPEN")
+  source         String    @default("LEADERSHIP")
+  relatedType    String?
+  relatedCode    String?
+  escalationLevel String   @default("NONE")
+  raisedAt       DateTime  @default(now())
+  dueDate        DateTime?
+  completedAt    DateTime?
+  raisedByName   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([status, dueDate])
+}
+
+model ProjectKpi {
+  id              String    @id @default(cuid())
+  projectId       String?
+  code            String    @unique
+  name            String
+  category        String    @default("KPI")
+  unit            String    @default("%")
+  targetValue     Float     @default(0)
+  currentValue    Float     @default(0)
+  baselineValue   Float?
+  expectedBenefit String?
+  actualBenefit   String?
+  status          String    @default("ON_TRACK")
+  measurementDate DateTime?
+  notes           String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([projectId])
+}
+
+model ReportSnapshot {
+  id              String   @id @default(cuid())
+  scope           String   @default("PORTFOLIO")
+  projectId       String?
+  projectCode     String?
+  title           String
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  version         Int      @default(1)
+  generatedById   String?
+  generatedByName String?
+  headlineJson    String?
+  payloadJson     String?
+  createdAt       DateTime @default(now())
+
+  @@index([scope, createdAt])
+  @@index([projectId])
+}
+
+model ReportSchedule {
+  id             String    @id @default(cuid())
+  name           String
+  frequency      String    @default("WEEKLY")
+  scope          String    @default("PORTFOLIO")
+  projectId      String?
+  sections       String?
+  recipients     String?
+  deliveryChannel String   @default("IN_APP")
+  isActive       Boolean   @default(true)
+  lastRunAt      DateTime?
+  templateId     String?
+  nextRunAt      DateTime?
+  lastRunSummary String?
+  createdByName  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([isActive, nextRunAt])
+}
+
+// ============ INTEGRITY LAYER ============
+// Freshness (honest staleness), Evidence (tamper-evident bundles), Monte Carlo
+// (seeded probabilistic forecasting), Calibration (say/do memory), Scenarios
+// (branch & merge sandbox), AI actions (draft-only, human-approved), Benefits.
+
+model FreshnessMetric {
+  id                  String   @id @default(cuid())
+  projectId           String
+  feed                String   // timesheets | ledger | tasks | raid | gates
+  lastUpdate          DateTime
+  expectedCadenceDays Int      @default(7)
+  updatedAt           DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, feed])
+  @@index([projectId])
+}
+
+model EvidenceBundle {
+  id            String    @id @default(cuid())
+  projectId     String
+  createdBy     String
+  createdByName String
+  docCount      Int
+  manifestHash  String
+  status        String    @default("VALID") // VALID | TAMPERED
+  verifiedAt    DateTime?
+  manifestJson  String
+  createdAt     DateTime  @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model TaskEstimate {
+  taskId       String   @id
+  optimistic   Float
+  likely       Float
+  pessimistic  Float
+  distribution String   @default("PERT") // PERT | TRIANGULAR
+  updatedAt    DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+model SimulationRun {
+  id          String   @id @default(cuid())
+  status      String   @default("COMPLETE") // QUEUED | RUNNING | COMPLETE | FAILED (async worker)
+  error       String?
+  projectId   String
+  seed        Int
+  iterations  Int
+  stale       Boolean  @default(false)
+  resultsJson String
+  createdAt   DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model CalibrationFactor {
+  id         String   @id @default(cuid())
+  scopeType  String   // team | workType | project
+  scopeId    String
+  label      String
+  factor     Float
+  sampleSize Int
+  mad        Float
+  computedAt DateTime @default(now()) @updatedAt
+
+  @@unique([scopeType, scopeId])
+  @@index([scopeType])
+}
+
+model Scenario {
+  id              String    @id @default(cuid())
+  name            String
+  projectId       String
+  status          String    @default("SANDBOX") // SANDBOX | MERGED | DISCARDED
+  createdBy       String
+  createdByName   String
+  snapshotJson    String
+  overridesJson   String    @default("{}")
+  diffJson        String?
+  changeRequestId String?
+  createdAt       DateTime  @default(now())
+  mergedAt        DateTime?
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model AiAction {
+  id            String    @id @default(cuid())
+  type          String    // STEERING_PACK | REPLAN_PROPOSAL
+  projectId     String?
+  title         String
+  contentJson   String
+  status        String    @default("DRAFTED") // DRAFTED | EDITED | APPROVED | REJECTED
+  trigger       String?
+  humanReviewer String?
+  decidedAt     DateTime?
+  createdAt     DateTime  @default(now())
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, type])
+}
+
+model BenefitProfile {
+  id                String    @id @default(cuid())
+  projectId         String
+  name              String
+  type              String    // REVENUE | COST_SAVING | CAPACITY | KPI
+  baselineValue     Float
+  targetValue       Float
+  timeframeMonths   Int
+  owner             String
+  reviewCadenceDays Int       @default(30)
+  active            Boolean   @default(false)
+  activatedAt       DateTime?
+  createdAt         DateTime  @default(now())
+
+  project  Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actuals  BenefitActual[]
+  reviews  BenefitReview[]
+
+  @@index([projectId])
+}
+
+model BenefitActual {
+  id        String   @id @default(cuid())
+  profileId String
+  period    DateTime
+  value     Float
+  source    String?
+  createdAt DateTime @default(now())
+
+  profile BenefitProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, period])
+}
+
+model BenefitReview {
+  id         String   @id @default(cuid())
+  profileId  String
+  date       DateTime
+  status     String   @default("ON_TRACK") // ON_TRACK | AT_RISK | MISSED
+  commentary String?
+  createdAt  DateTime @default(now())
+
+  profile BenefitProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId])
+}
+
+model SystemConfig {
+  id                   String   @id @default("singleton")
+  freshnessWarn        Float    @default(1.0)
+  freshnessDegrade     Float    @default(1.5)
+  freshnessCritical    Float    @default(2.5)
+  freshnessGraceHours  Int      @default(24)
+  updatedAt            DateTime @updatedAt
+}
+
+// ============ TECHNOLOGY & ARCHITECTURE (v1.3.0) ============
+
+model TechApplication {
+  id                  String   @id @default(cuid())
+  name                String
+  category            String   @default("APPLICATION") // APPLICATION | PLATFORM | INFRASTRUCTURE | API
+  businessCriticality String   @default("MEDIUM") // LOW | MEDIUM | HIGH | MISSION_CRITICAL
+  lifecycleStatus     String   @default("ACTIVE") // PLANNED | ACTIVE | LEGACY | SUNSET | RETIRED
+  cloudHosted         Boolean  @default(false)
+  owner               String?
+  version             String?
+  healthScore         Int      @default(80)
+  businessUnits       String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  debts    TechnicalDebt[]
+  releases TechRelease[]
+
+  @@index([lifecycleStatus])
+}
+
+model TechTechnology {
+  id              String    @id @default(cuid())
+  name            String
+  category        String // LANGUAGE | FRAMEWORK | DATABASE | CLOUD | TOOL
+  version         String?
+  lifecycleStatus String    @default("ACTIVE") // ACTIVE | DEPRECATED | UNSUPPORTED
+  supportEndsAt   DateTime?
+  usedByCount     Int       @default(0)
+
+  @@index([lifecycleStatus])
+}
+
+model TechnicalDebt {
+  id            String  @id @default(cuid())
+  applicationId String?
+  title         String
+  severity      String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  estimateHours Float   @default(0)
+  status        String  @default("OPEN") // OPEN | PLANNED | RESOLVED
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  application TechApplication? @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model TechRelease {
+  id            String   @id @default(cuid())
+  applicationId String
+  version       String
+  releasedAt    DateTime
+  status        String   @default("DEPLOYED") // PLANNED | DEPLOYED | ROLLED_BACK
+  deployments   Int      @default(1)
+  leadTimeDays  Float    @default(0)
+
+  application TechApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([releasedAt])
+}
+
+// ============ AI LEARNING MEMORY (v1.3.2) ============
+
+model AiMemory {
+  id            String   @id @default(cuid())
+  userId        String
+  question      String
+  answerSummary String?
+  topic         String?
+  feedback      String   @default("NONE") // POSITIVE | NEGATIVE | NONE
+  createdAt     DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([topic])
+}
+
+model AiKnowledge {
+  id      String   @id @default(cuid())
+  day     DateTime
+  kind    String // PATTERN | PREFERENCE | CORRECTION
+  content String
+  weight  Float    @default(1)
+  source  String   @default("DISTILLED")
+
+  @@unique([day, content])
+  @@index([day])
+}
+
+// ============ PRIORITIZATION & PORTFOLIO SELECTION (v1.5.0) ============
+
+model PriorityCriterion {
+  id      String @id @default(cuid())
+  name    String
+  weight  Float
+  order   Int    @default(0)
+  modelId String @default("default")
+  @@index([modelId])
+}
+
+model ProjectScore {
+  id            String   @id @default(cuid())
+  projectId     String
+  scoresJson    String   // { criterionId: 0-100 }
+  weightedScore Float
+  classification String  // CRITICAL | HIGH | MEDIUM | LOW | DEFER
+  overrideScore Float?
+  overrideReason String?
+  overrideBy    String?
+  costEstimate  Float    @default(0)
+  expectedValue Float    @default(0)
+  mandatory     Boolean  @default(false) // regulatory / contractual / strategically critical — always funded first
+  dependsOnJson String   @default("[]")  // [projectId] — project-level dependencies honored by the optimizer
+  scoredAt      DateTime @default(now()) @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId])
+}
+
+model PortfolioScenario {
+  id                String    @id @default(cuid())
+  name              String
+  budget            Float
+  maxProjects       Int?
+  selectedJson      String
+  excludedJson      String
+  totalScore        Float
+  invested          Float
+  // --- Executive decision workflow (v2.8) ---
+  status            String    @default("DRAFT") // DRAFT|OPTIMIZED|EXECUTIVE_REVIEW|CHANGES_REQUESTED|APPROVED|PUBLISHED|LOCKED
+  scenarioKey       String?   // preset key e.g. MAXIMIZE_STRATEGIC_VALUE | CUSTOM
+  createdBy         String?
+  ownerName         String?
+  totalValue        Float     @default(0)
+  weightsJson       String    @default("[]")  // criteria snapshot used for this optimization
+  constraintsJson   String    @default("{}")  // full optimization input (constraints, preset, resource/budget limits)
+  resultsJson       String    @default("{}")  // executive result bundle (KPIs, cards, insights, what-changed)
+  engineVersion     String    @default("1.0.0")
+  previousScenarioId String?
+  decisionNote      String?
+  decidedBy         String?
+  decidedAt         DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model Comment {
+  id           String   @id @default(cuid())
+  entityType   String   // PROJECT | TASK | … (extensible)
+  entityId     String
+  authorId     String?
+  authorName   String
+  body         String
+  mentionsJson String   @default("[]") // [userId] mentioned users
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// ============ PROJECT INTAKE FORMS (ClickUp-Forms analog, v2.8) ============
+
+model IntakeSubmission {
+  id                  String   @id @default(cuid())
+  reference           String   @unique // INT-YYYYMMDD-XXXX
+  name                String
+  sponsorName         String
+  sponsorEmail        String
+  businessUnit        String?
+  strategicObjective  String?
+  description         String
+  estimatedBudget     Float    @default(0)
+  expectedValue       Float    @default(0)
+  urgency             String   @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  mandatory           Boolean  @default(false)    // regulatory / contractual commitment
+  notes               String?
+  status              String   @default("NEW")    // NEW | TRIAGED | CONVERTED | REJECTED
+  triageNote          String?
+  triagedBy           String?
+  createdProjectId    String?
+  sourceIp            String?
+  createdAt           DateTime @default(now())
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============ ENTERPRISE REPORTING CENTER (v1.6.0) ============
+
+model ReportingTemplate {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String
+  category    String   // EXECUTIVE | FINANCE | TECHNOLOGY | PMO | PROJECT | RESOURCE | RISK
+  audience    String   // CEO | CFO | CTO | PMO | PM | ALL
+  purpose     String?
+  kpis        String   @default("[]")   // JSON array of KPI definitions
+  charts      String   @default("[]")   // JSON array of chart specs
+  tables      String   @default("[]")   // JSON array of table specs
+  filters     String   @default("[]")   // JSON array of filter definitions
+  dataSource  String   @default("projects")
+  frequency   String   @default("MONTHLY")
+  ragLogic    String?
+  status      String   @default("PUBLISHED") // DRAFT | REVIEW | APPROVED | PUBLISHED | ARCHIVED
+  version     Int      @default(1)
+  runCount    Int      @default(0)
+  createdBy   String   @default("system")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([category])
+  @@index([audience])
+}
+
+model GeneratedReport {
+  id           String   @id @default(cuid())
+  templateId   String?
+  templateName String
+  category     String
+  generatedBy  String
+  period       String   @default("CURRENT_MONTH")
+  format       String   @default("HTML")
+  dataJson     String   @default("{}")
+  narrative    String?
+  status       String   @default("READY") // QUEUED | READY | FAILED
+  createdAt    DateTime @default(now())
+
+  @@index([templateId])
+  @@index([createdAt])
+}
+
+model ReportSubscription {
+  id         String   @id @default(cuid())
+  userId     String
+  templateId String
+  frequency  String   @default("MONTHLY")
+  format     String   @default("PDF")
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, templateId])
+}
+
+// ============ INVESTMENT & BUSINESS CASE (v1.7.0) ============
+
+model BusinessCase {
+  id              String   @id @default(cuid())
+  name            String
+  projectId       String?
+  sponsor         String
+  businessUnit    String?
+  strategicObjective String?
+  currency        String   @default("USD")
+  analysisYears   Int      @default(5)
+  discountRatePct Float    @default(8)
+  capexItemsJson  String   @default("[]")  // [{category,description,amount,year,vendor,costCenter}]
+  opexItemsJson   String   @default("[]")  // [{category,description,annualAmount,startYear,endYear,escalationPct}]
+  benefitItemsJson String  @default("[]") // [{name,type,annualValue,startYear,growthPct,confidencePct,owner}]
+  computedJson    String   @default("{}")
+  recommendation  String   @default("REVIEW") // STRONG_INVEST | INVEST | REVIEW | CONDITIONAL | DO_NOT_INVEST
+  status          String   @default("DRAFT") // DRAFT | SUBMITTED | PMO_REVIEW | FINANCE_REVIEW | CFO_REVIEW | APPROVED | REJECTED | CONDITIONAL | FUNDED
+  approvedAmount  Float?
+  decidedBy       String?
+  decidedAt       DateTime?
+  decisionComment String?
+  createdBy       String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ============ ADMIN CONTROL CENTER — METADATA LAYER (v1.9.0) ============
+
+model EntityDefinition {
+  id           String   @id @default(cuid())
+  entityKey    String   @unique // stable internal name: project, risk...
+  displayName  String
+  pluralName   String
+  description  String?
+  active       Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
+
+model CustomFieldType {
+  id           String  @id @default(cuid())
+  name         String  @unique // reusable type name: Business Criticality
+  baseType     String // TEXT | LONG_TEXT | NUMBER | CURRENCY | PERCENT | DATE | BOOLEAN | SELECT | MULTI_SELECT | RAG | SCORE | RATING | USER | FORMULA
+  optionsJson  String? // select options, score range, formula expression
+  display      String  @default("INPUT") // INPUT | BADGE | RAG | GAUGE | STARS
+  required     Boolean @default(false)
+  reusable     Boolean @default(true)
+  createdBy    String?
+  createdAt    DateTime @default(now())
+}
+
+model FieldDefinition {
+  id           String  @id @default(cuid())
+  entityKey    String
+  internalName String // stable machine name
+  displayLabel String
+  customTypeId String?
+  optionsJson  String?
+  baseType     String  @default("TEXT")
+  required     Boolean @default(false)
+  defaultValue String?
+  helpText     String?
+  searchable   Boolean @default(true)
+  filterable   Boolean @default(true)
+  reportable   Boolean @default(true)
+  sensitive    Boolean @default(false)
+  displayOrder Int     @default(100)
+  status       String  @default("PUBLISHED") // DRAFT | PUBLISHED | ARCHIVED
+  createdBy    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([entityKey, internalName])
+  @@index([entityKey, status])
+}
+
+// --- Dynamic Field Configuration Engine (v3.2) ---
+// Admin-defined field dictionary + UI tab mappings. Values are stored on
+// Project.customData (Json column keyed by fieldKey). On SQLite Prisma stores
+// Json as TEXT; on PostgreSQL the same schema maps to JSONB with no changes.
+// dataType uses a String column + app-level enum (FIELD_DATA_TYPES in
+// src/lib/engines/custom-fields.ts) because SQLite does not support Prisma
+// enums — swap to `enum FieldDataType` verbatim when migrating to PostgreSQL.
+model CustomFieldDefinition {
+  id          String            @id @default(uuid())
+  fieldKey    String            @unique // stable machine name: delivery_region
+  label       String // display label: Delivery Region
+  dataType    String            // TEXT | NUMBER | DATE | BOOLEAN | DROPDOWN | USER_LOOKUP | EMAIL | URL | PHONE | MULTI_SELECT
+  options     Json? // DROPDOWN / MULTI_SELECT: string[] of choices
+  config      Json? // validation + display rules: { min, max, step, integer, unit, minLength, maxLength, multiline, placeholder, defaultValue }
+  description String?
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  tabMappings TabFieldMapping[]
+}
+
+model ProjectTab {
+  id          String  @id @default(uuid())
+  name        String
+  order       Int
+  description String? // helper text shown above the form on the project workspace
+  fields      TabFieldMapping[]
+}
+
+model TabFieldMapping {
+  id           String                @id @default(uuid())
+  tabId        String
+  tab          ProjectTab            @relation(fields: [tabId], references: [id], onDelete: Cascade)
+  fieldId      String
+  field        CustomFieldDefinition @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+  displayOrder Int
+  isRequired   Boolean               @default(false)
+  isReadOnly   Boolean               @default(false) // locked on this tab (value tracked, not edited here)
+  fullWidth    Boolean               @default(false) // spans both form columns
+  showInReport Boolean               @default(true) // included in field reporting / coverage
+
+  @@unique([tabId, fieldId])
+  @@index([tabId, displayOrder])
+}
+
+model NamingConvention {
+  id        String @id @default(cuid())
+  scope     String @unique // fields | entities | projectCode | riskCode | issueCode | changeCode
+  style     String @default("snake_case") // snake_case | camelCase | PascalCase | UPPER_SNAKE
+  prefix    String @default("")
+  suffix    String @default("")
+  includeYear Boolean @default(false)
+  seqPad    Int    @default(5)
+}
+
+model Terminology {
+  id          String  @id @default(cuid())
+  termKey     String  @unique // project, risk, milestone...
+  defaultTerm String
+  customTerm  String?
+  pluralName  String?
+  active      Boolean @default(true)
+}
+
+model FeatureFlag {
+  id      String  @id @default(cuid())
+  key     String  @unique
+  enabled Boolean @default(false)
+  roles   String? // csv of role codes; empty = all
+}
+
+model AdminSettings {
+  id                   String @id @default("singleton")
+  orgName              String @default("dynamiq Solutions")
+  confidentialityLabel String @default("CONFIDENTIAL — INTERNAL MANAGEMENT USE ONLY")
+  currency             String @default("USD")
+  dateFormat           String @default("YYYY-MM-DD")
+  prioritizationConfigJson String @default("{}") // executive prioritization: RAG thresholds, alerts, decision categories, presets, KPI defs
+}
+
+// ============ IDENTITY & ACCESS (v2.0.0) ============
+
+model IdentityProvider {
+  id              String   @id @default(cuid())
+  protocol        String   // SAML2 | OIDC
+  name            String
+  issuer          String
+  clientId        String?
+  clientSecret    String?
+  ssoUrl          String
+  idpCertificate  String?
+  groupsRoleMappingJson String @default("[]") // [{idpGroup: "PMO Lead", roleCode: "PMO_ADMIN"}]
+  status          String   @default("CONFIGURED") // CONFIGURED | CONNECTED (live-tested)
+  lastTestAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ScimToken {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  label      String
+  active     Boolean  @default(true)
+  lastUsedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
+// ============ DELIVERY DEPTH: UAT + DOCUMENTS + SCHEDULE SCENARIOS (v2.2.0) ============
+
+model UatCycle {
+  id          String   @id @default(cuid())
+  projectId   String
+  name        String
+  status      String   @default("ACTIVE") // ACTIVE | CLOSED
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  cases       UatCase[]
+  @@index([projectId])
+}
+
+model UatCase {
+  id          String  @id @default(cuid())
+  cycleId     String
+  title       String
+  severity    String  @default("MEDIUM") // LOW | MEDIUM | HIGH | CRITICAL
+  status      String  @default("NOT_RUN") // NOT_RUN | PASS | FAIL | BLOCKED
+  executedBy  String?
+  executedAt  DateTime?
+  defectRef   String?
+  notes       String?
+  cycle       UatCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  @@index([cycleId])
+}
+
+
+model ScheduleScenario {
+  id            String   @id @default(cuid())
+  projectId     String
+  name          String
+  deltasJson    String   // {taskId: newDurationDays}
+  baseFinish    Float
+  scenarioFinish Float
+  createdAt     DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  @@index([projectId])
+}
+
+model StrategicObjective {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  weight      Float    @default(20)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  projects    Project[]
+  @@index([order])
+}
+
+model BoardPack {
+  id                String   @id @default(cuid())
+  name              String
+  createdBy         String
+  executiveSummary  String?
+  confidentiality   String   @default("CONFIDENTIAL")
+  createdAt         DateTime @default(now())
+  pages             BoardPackPage[]
+  @@index([createdAt])
+}
+model BoardPackPage {
+  id        String   @id @default(cuid())
+  packId    String
+  order     Int
+  title     String
+  reportId  String?
+  pack      BoardPack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  @@index([packId])
+}
+model CustomReport {
+  id          String   @id @default(cuid())
+  name        String
+  category    String   @default("CUSTOM")
+  componentsJson String @default("[]")
+  createdBy   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([createdBy])
+}

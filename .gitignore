@@ -1,0 +1,40 @@
+# Dependencies & build output
+node_modules/
+.next/
+out/
+dist/
+
+# Local env / Vercel
+# `.env` holds machine-local paths — never commit it. On Vercel, env vars come
+# from the dashboard (Postgres integration + JWT_SECRET). `.env.vercel` is a
+# gitignored local convenience for testing against a hosted database.
+.env
+.env.vercel
+# Generated PostgreSQL schema variant (see scripts/prepare-vercel.mjs)
+prisma/schema.vercel.prisma
+
+# Alternate Next build caches — must stay ignored: Tailwind v4 automatic source
+# detection scans everything not gitignored, and binary files inside these
+# (Turbopack SST chunks) corrupt generated utility classes → CSS parse errors.
+.next-brand-*/
+
+# Local artifacts (binaries, screenshots, scratch logs — never scanned for classes)
+.zscripts/
+.zwork/
+backups/
+_backups/
+db/*.db
+tool-results/
+gui-test-screenshots/
+download/
+
+# Logs & caches
+*.log
+dev.log
+server.log
+*.tsbuildinfo
+
+# Deck build artifacts (keep build.js + pptx, drop heavy deps/exports)
+sales-deck/node_modules/
+sales-deck/png/
+sales-deck/package-lock.json
