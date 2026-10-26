@@ -25,7 +25,7 @@ const STRATEGIES = ["MITIGATE", "AVOID", "TRANSFER", "ACCEPT", "MONITOR", "ESCAL
 const ISSUE_CATEGORIES = ["TECHNICAL", "COMMERCIAL", "FINANCIAL", "OPERATIONAL", "REGULATORY", "RESOURCE", "QUALITY", "VENDOR", "OTHER"] as const;
 const ISSUE_STATUSES = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const;
 const ISSUE_SEVERITY = ["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const;
-const ASSUMPTION_STATUSES = ["VALID", "AT_RISK", "INVALID", "CLOSED"] as const;
+const ASSUMPTION_STATUSES = ["TO_VALIDATE", "VALID", "AT_RISK", "INVALID", "CLOSED"] as const;
 
 interface Risk {
   [key: string]: unknown;
@@ -221,6 +221,7 @@ export default function RaidView() {
       openRisks: r.filter((x) => x.status !== "CLOSED").length,
       critical: r.filter((x) => x.severity === "CRITICAL" && x.status !== "CLOSED").length,
       openIssues: i.filter((x) => !["RESOLVED", "CLOSED"].includes(x.status)).length,
+      toValidate: a.filter((x) => x.status === "TO_VALIDATE").length,
       atRisk: a.filter((x) => x.status === "AT_RISK").length,
     };
   }, [risks.data, issues.data, assumptions.data]);
@@ -318,10 +319,11 @@ export default function RaidView() {
         actions={<ProjectPicker value={projectId} onChange={setProjectId} options={options} />}
       />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <SectionCard bodyClass="p-4"><p className="text-xs uppercase text-slate-400">Open risks</p><p className="text-2xl font-semibold text-slate-900 tabular-nums">{summary.openRisks}</p></SectionCard>
         <SectionCard bodyClass="p-4"><p className="text-xs uppercase text-slate-400">Critical severity</p><p className="text-2xl font-semibold text-red-600 tabular-nums">{summary.critical}</p></SectionCard>
         <SectionCard bodyClass="p-4"><p className="text-xs uppercase text-slate-400">Open issues</p><p className="text-2xl font-semibold text-amber-600 tabular-nums">{summary.openIssues}</p></SectionCard>
+        <SectionCard bodyClass="p-4"><p className="text-xs uppercase text-slate-400">To validate</p><p className="text-2xl font-semibold text-blue-700 tabular-nums">{summary.toValidate}</p></SectionCard>
         <SectionCard bodyClass="p-4"><p className="text-xs uppercase text-slate-400">Assumptions at risk</p><p className="text-2xl font-semibold text-slate-900 tabular-nums">{summary.atRisk}</p></SectionCard>
       </div>
 

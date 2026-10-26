@@ -49,6 +49,21 @@ function avatarColor(name: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
+/**
+ * Deterministic generated avatar per resource: DiceBear is seeded with the
+ * employee code (falls back to the name), so each person always renders the
+ * same image across cards, table and reloads. If the image cannot load
+ * (offline / blocked), <Avatar> falls back to the solid-color initials above.
+ */
+function dicebearUrl(seed: string): string {
+  return `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(seed)}`;
+}
+
+/** Prefer a stored avatar, else the generated one — never a blank circle. */
+function resourceAvatarUrl(r: ResourceRow): string {
+  return r.avatarUrl || dicebearUrl(r.employeeCode || r.name);
+}
+
 /** Utilization bar with explicit over-allocation red. */
 function UtilBar({ pct, over }: { pct: number; over: boolean }) {
   const v = Math.min(100, Math.max(0, pct));
@@ -167,7 +182,7 @@ export default function ResourcesView() {
   const columns: Column<ResourceRow>[] = [
     { key: "name", header: "Resource", render: (r) => (
       <div className="flex items-center gap-2.5">
-        <Avatar name={r.name} color={avatarColor(r.name)} url={r.avatarUrl} size="h-8 w-8 text-xs" />
+        <Avatar name={r.name} color={avatarColor(r.name)} url={resourceAvatarUrl(r)} size="h-8 w-8 text-xs" />
         <div>
           <p className="font-medium text-slate-800">{r.name}</p>
           <p className="text-xs text-slate-400">{r.employeeCode}{r.title ? ` · ${r.title}` : ""}</p>
@@ -228,7 +243,7 @@ export default function ResourcesView() {
             <button key={r.id} onClick={() => setDetailId(r.id)} className="text-left">
               <div className="rounded-lg border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-blue-200 transition-all p-4 h-full">
                 <div className="flex items-start gap-3">
-                  <Avatar name={r.name} color={avatarColor(r.name)} url={r.avatarUrl} size="h-10 w-10 text-sm" className="shrink-0" />
+                  <Avatar name={r.name} color={avatarColor(r.name)} url={resourceAvatarUrl(r)} size="h-10 w-10 text-sm" className="shrink-0" />
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-slate-800 truncate">{r.name}</p>
                     <p className="text-xs text-slate-500 truncate">{r.title || "—"} · {r.department || "—"}</p>
@@ -267,7 +282,18 @@ export default function ResourcesView() {
       <Sheet open={Boolean(detailId)} onOpenChange={(o) => { if (!o) setDetailId(null); }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
           <SheetHeader>
-            <SheetTitle>{detail.data?.resource.name || "Resource"}</SheetTitle>
+            <div className="flex items-center gap-3">
+              {detail.data && (
+                <Avatar
+                  name={detail.data.resource.name}
+                  color={avatarColor(detail.data.resource.name)}
+                  url={resourceAvatarUrl(detail.data.resource)}
+                  size="h-10 w-10 text-sm"
+                  className="shrink-0"
+                />
+              )}
+              <SheetTitle>{detail.data?.resource.name || "Resource"}</SheetTitle>
+            </div>
             <SheetDescription>
               {detail.data ? `${detail.data.resource.employeeCode} · ${detail.data.resource.title || "—"} · ${detail.data.resource.department || "—"}` : "Loading profile…"}
             </SheetDescription>

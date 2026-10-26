@@ -9,7 +9,7 @@ import { writeAudit } from "@/lib/audit";
 import { emitRealtime, projectRoom } from "@/lib/realtime";
 import { fireAutomations } from "@/lib/engines/automations";
 
-const ASSUMPTION_STATUSES = ["VALID", "AT_RISK", "INVALID", "CLOSED"] as const;
+const ASSUMPTION_STATUSES = ["TO_VALIDATE", "VALID", "AT_RISK", "INVALID", "CLOSED"] as const;
 
 async function nextAssumptionCode(): Promise<string> {
   const count = await db.assumption.count();
@@ -45,6 +45,7 @@ export const GET = withApi(async (ctx) => {
     assumptions,
     total: assumptions.length,
     summary: {
+      toValidate: assumptions.filter((a) => a.status === "TO_VALIDATE").length,
       valid: assumptions.filter((a) => a.status === "VALID").length,
       atRisk: assumptions.filter((a) => a.status === "AT_RISK").length,
       invalid: assumptions.filter((a) => a.status === "INVALID").length,

@@ -38,25 +38,39 @@ export const POST = withApi(async (ctx) => {
     firedRecently.set(key, set);
   }
 
-  const overdueTasks = await db.task.findMany({
-    where: { endDate: { lt: now }, status: { notIn: TASK_DONE } },
-    select: {
-      id: true, code: true, name: true, endDate: true, status: true, criticality: true,
-      projectId: true, progress: true, isCritical: true,
-      project: { select: { code: true, name: true } },
-    },
-    orderBy: { endDate: "asc" },
-    take: 200,
-  });
-  const missedMilestones = await db.milestone.findMany({
-    where: { dueDate: { lt: now }, status: { not: "COMPLETED" } },
-    select: {
-      id: true, code: true, name: true, dueDate: true, status: true, isCritical: true,
-      projectId: true, project: { select: { code: true } },
-    },
-    orderBy: { dueDate: "asc" },
-    take: 200,
-  });
+  // Date predicates run in JS, not SQL: imported plan dates are stored as
+  // ISO-8601 TEXT while Prisma writes epoch-ms INTEGER — SQLite can't compare
+  // the two storages, so `endDate: { lt: now }` silently matched 0 rows.
+  // `not: null` is storage-agnostic; we then window, sort and cap in JS.
+  const TASK_SCAN_CAP = 5000;
+  const overdueTasks = (
+    await db.task.findMany({
+      where: { endDate: { not: null }, status: { notIn: TASK_DONE } },
+      select: {
+        id: true, code: true, name: true, endDate: true, status: true, criticality: true,
+        projectId: true, progress: true, isCritical: true,
+        project: { select: { code: true, name: true } },
+      },
+      take: TASK_SCAN_CAP,
+    })
+  )
+    .filter((t) => t.endDate !== null && t.endDate.getTime() < now.getTime())
+    .sort((a, b) => (a.endDate?.getTime() ?? 0) - (b.endDate?.getTime() ?? 0))
+    .slice(0, 200);
+
+  const missedMilestones = (
+    await db.milestone.findMany({
+      where: { dueDate: { not: null }, status: { not: "COMPLETED" } },
+      select: {
+        id: true, code: true, name: true, dueDate: true, status: true, isCritical: true,
+        projectId: true, project: { select: { code: true } },
+      },
+      take: TASK_SCAN_CAP,
+    })
+  )
+    .filter((m) => m.dueDate !== null && m.dueDate.getTime() < now.getTime())
+    .sort((a, b) => (a.dueDate?.getTime() ?? 0) - (b.dueDate?.getTime() ?? 0))
+    .slice(0, 200);
 
   let fired = 0;
   for (const rule of taskRules) {

@@ -51,6 +51,7 @@ const AnalyticsView = L(() => import("@/views/intelligence/analytics"));
 const InsightsHubView = L(() => import("@/views/intelligence/insights"));
 const InsightsReportView = L(() => import("@/views/intelligence/insights-report"));
 const AssistantView = L(() => import("@/views/intelligence/assistant"));
+const AiFeaturesView = L(() => import("@/views/ai/features"));
 const IntegrationsView = L(() => import("@/views/connect/integrations"));
 const AutomationsView = L(() => import("@/views/connect/automations"));
 const NotificationsView = L(() => import("@/views/connect/notifications"));
@@ -61,7 +62,7 @@ const AdminUsersView = L(() => import("@/views/admin/users"));
 const AdminRolesView = L(() => import("@/views/admin/roles"));
 const AdminTemplatesView = L(() => import("@/views/admin/templates"));
 const AdminAuditView = L(() => import("@/views/admin/audit"));
-const AdminSettingsView = L(() => import("@/views/admin/settings"));
+const AdminSettingsView = L(() => import("@/views/admin/settings-hub"));
 const FieldDictionaryAdminView = L(() => import("@/views/admin/FieldDictionaryAdmin"));
 const TabBuilderAdminView = L(() => import("@/views/admin/TabBuilder"));
 
@@ -120,6 +121,7 @@ export function renderView(segments: string[]): { C: ComponentType; key: string 
     case "analytics": return { C: AnalyticsView, key };
     case "insights": return b === "report" ? { C: InsightsReportView, key } : { C: InsightsHubView, key };
     case "assistant": return { C: AssistantView, key };
+    case "ai-features": return { C: AiFeaturesView, key };
     case "integrations": return { C: IntegrationsView, key };
     case "automations": return { C: AutomationsView, key };
     case "notifications": return { C: NotificationsView, key };

@@ -41,7 +41,7 @@ const ENV_KEYS: Array<{ key: keyof TemplatesConfig["environment"]; label: string
   { key: "realtimeUrlSet", label: "REALTIME_URL", hint: "Address of the realtime gateway service for event fan-out." },
 ];
 
-export default function AdminSettingsView() {
+export default function AdminSettingsView({ embedded = false }: { embedded?: boolean } = {}) {
   const config = useApi<TemplatesConfig>("/api/admin/templates-config");
   const ready = useApi<SystemReady>("/api/system/ready");
   const [probing, setProbing] = useState(false);
@@ -83,11 +83,13 @@ export default function AdminSettingsView() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="System Configuration"
-        breadcrumb={["Administration", "Settings"]}
-        subtitle="Environment readiness, entity volumes, gateway status and the Bring-Your-Own-Key AI provider. Secrets are never displayed; only their configured state."
-      />
+      {!embedded && (
+        <PageHeader
+          title="System Configuration"
+          breadcrumb={["Administration", "Settings"]}
+          subtitle="Environment readiness, entity volumes, gateway status and the Bring-Your-Own-Key AI provider. Secrets are never displayed; only their configured state."
+        />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard

@@ -69,8 +69,11 @@ async function buildGovernedContext(): Promise<Record<string, unknown>> {
       _count: { id: true },
     }),
     db.milestone.findMany({
-      where: { dueDate: { gte: now, lte: in30 }, status: { not: "COMPLETED" } },
-      orderBy: { dueDate: "asc" }, take: 8,
+      // Window is applied in JS, not SQL: imported due dates are ISO-8601 TEXT
+      // while Prisma binds epoch-ms INTEGER — SQLite can't compare across the
+      // two storages, so `gte/lte` would silently return 0 rows.
+      where: { dueDate: { not: null }, status: { not: "COMPLETED" } },
+      orderBy: { dueDate: "asc" }, take: 500,
       select: { name: true, dueDate: true, project: { select: { code: true } } },
     }),
   ]);
@@ -107,7 +110,10 @@ async function buildGovernedContext(): Promise<Record<string, unknown>> {
     newAlerts: alerts.map((a) => ({ severity: a.severity, title: a.title, project: a.project?.code ?? null, createdAt: a.createdAt })),
     capacityHotSpots,
     timesheetTotals: { windowDays: 28, totalHours: round2(timesheets._sum.totalHours ?? 0), billableHours: round2(timesheets._sum.billableHours ?? 0), timesheets: timesheets._count.id },
-    upcomingMilestones: milestones.map((m) => ({ name: m.name, dueDate: m.dueDate, project: m.project.code })),
+    upcomingMilestones: milestones
+      .filter((m) => m.dueDate !== null && m.dueDate.getTime() >= now.getTime() && m.dueDate.getTime() <= in30.getTime())
+      .slice(0, 8)
+      .map((m) => ({ name: m.name, dueDate: m.dueDate, project: m.project.code })),
   };
 }
 
